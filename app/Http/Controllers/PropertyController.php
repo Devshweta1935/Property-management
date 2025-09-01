@@ -7,19 +7,12 @@ use App\Http\Resources\PropertyCollection;
 use App\Http\Resources\PropertyResource;
 use App\Mail\PropertyCreatedMail;
 use App\Models\Property;
-use App\Services\EmailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 
 class PropertyController extends Controller
 {
-    protected EmailService $emailService;
-
-    public function __construct(EmailService $emailService)
-    {
-        $this->emailService = $emailService;
-    }
 
     /**
      * Display a listing of the authenticated agent's properties.
@@ -117,20 +110,20 @@ class PropertyController extends Controller
 
             \Log::info('Property created successfully', ['property_id' => $property->id]);
 
-            // Send email notification via queue
-            \Log::info('Attempting to dispatch email notification job', ['email' => $request->user()->email]);
+            // Send email notification directly
+            \Log::info('Attempting to send email notification directly', ['email' => $request->user()->email]);
             try {
-                $this->emailService->sendPropertyCreatedEmail($property, $request->user()->email);
-                \Log::info('Email notification job dispatched successfully');
+                Mail::to($request->user()->email)->send(new PropertyCreatedMail($property));
+                \Log::info('Email notification sent successfully');
             } catch (\Exception $e) {
-                \Log::error('Email job dispatch failed', [
+                \Log::error('Email sending failed', [
                     'error' => $e->getMessage(),
                     'error_file' => $e->getFile(),
                     'error_line' => $e->getLine(),
                     'property_id' => $property->id,
                     'user_email' => $request->user()->email
                 ]);
-                // Don't fail the entire request if email job dispatch fails, but log the error
+                // Don't fail the entire request if email sending fails, but log the error
             }
 
             return response()->json([
@@ -283,23 +276,23 @@ class PropertyController extends Controller
                 ], 404);
             }
 
-            // Test email sending via queue
+            // Test email sending directly
             try {
-                $this->emailService->sendPropertyCreatedEmail($property, $request->user()->email);
+                Mail::to($request->user()->email)->send(new PropertyCreatedMail($property));
                 
-                \Log::info('Test email job dispatched successfully', [
+                \Log::info('Test email sent successfully', [
                     'user_email' => $request->user()->email,
                     'property_id' => $property->id
                 ]);
 
                 return response()->json([
                     'success' => true,
-                    'message' => 'Test email job dispatched successfully',
+                    'message' => 'Test email sent successfully',
                     'status_code' => 200,
                     'data' => [
                         'email_sent_to' => $request->user()->email,
                         'property_used_for_test' => $property->title,
-                        'queue_status' => 'Job dispatched to emails queue',
+                        'email_status' => 'Email sent directly (no queue)',
                         'mail_config' => [
                             'host' => config('mail.mailers.smtp.host'),
                             'port' => config('mail.mailers.smtp.port'),
@@ -324,7 +317,7 @@ class PropertyController extends Controller
 
                 return response()->json([
                     'success' => false,
-                    'message' => 'Test email job dispatch failed',
+                    'message' => 'Test email sending failed',
                     'error' => $e->getMessage(),
                     'error_details' => [
                         'file' => $e->getFile(),
